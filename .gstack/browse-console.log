@@ -80,3 +80,29 @@
 [2026-07-14T09:09:53.093Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
 [2026-07-14T09:09:56.090Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
 [2026-07-14T09:09:56.241Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=UPEq0Us3-jZboGgBOM8vW' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-07-14T09:21:51.748Z] [error] Failed to load resource: the server responded with a status of 400 ()
+[2026-07-14T09:42:21.683Z] [error] Failed to load resource: the server responded with a status of 500 ()
+[2026-07-14T09:59:48.289Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-07-14T09:59:48.367Z] [log] [HMR] connected
+[2026-07-14T09:59:49.558Z] [error] Failed to load resource: the server responded with a status of 400 ()
+[2026-07-14T10:00:04.515Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-07-14T10:00:04.528Z] [log] [HMR] connected
+[2026-07-14T10:00:42.694Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:00:43.449Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:00:43.666Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=sH6Oed2GsPH1sG7eA95V2' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:00:44.669Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=sH6Oed2GsPH1sG7eA95V2' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:00:45.672Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=sH6Oed2GsPH1sG7eA95V2' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:00:46.450Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:00:46.676Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=sH6Oed2GsPH1sG7eA95V2' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:00:47.678Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=sH6Oed2GsPH1sG7eA95V2' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:00:49.447Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:00:52.449Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:00:52.680Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=sH6Oed2GsPH1sG7eA95V2' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:00:55.449Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:00:57.686Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=sH6Oed2GsPH1sG7eA95V2' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:00:58.452Z] [error] Failed to load resource: net::ERR_CONNECTION_REFUSED
+[2026-07-14T10:01:02.694Z] [log] [HMR] connected
+[2026-07-14T10:01:02.975Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-07-14T10:01:03.046Z] [log] [HMR] connected
+[2026-07-14T10:01:11.598Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-07-14T10:01:11.623Z] [log] [HMR] connected

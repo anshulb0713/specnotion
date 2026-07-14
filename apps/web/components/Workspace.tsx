@@ -9,7 +9,7 @@ import { api } from "../lib/api";
 import { AppChrome } from "./AppChrome";
 import { MarkdownReview } from "./MarkdownReview";
 import { ReviewPanel } from "./ReviewPanel";
-import { getWorkspacePhase } from "./workspaceState";
+import { getWorkspacePhase, sameProjects, sameWorkspacePayload } from "./workspaceState";
 
 type ProjectWithVersion = Project & { activeVersionId: string | null };
 type VersionPayload = { project: Project; version: SpecificationVersion; cards: ReviewCard[] };
@@ -31,7 +31,7 @@ export function Workspace({ session }: { session: Session }) {
 
   const loadProjects = useCallback(async () => {
     const result = await api<{ projects: ProjectWithVersion[] }>("/api/projects");
-    setProjects(result.projects);
+    setProjects((current) => sameProjects(current, result.projects) ? current : result.projects);
     setSelectedProjectId((current) => {
       if (current) return current;
       const requestedProject = new URLSearchParams(window.location.search).get("project");
@@ -47,7 +47,7 @@ export function Workspace({ session }: { session: Session }) {
     if (!quiet) setLoading(true);
     try {
       const next = await api<VersionPayload>(`/api/versions/${versionId}`);
-      setPayload(next);
+      setPayload((current) => sameWorkspacePayload(current, next) ? current : next);
       setActiveCardId((current) => {
         if (current && next.cards.some((card) => card.id === current)) return current;
         const requestedCard = new URLSearchParams(window.location.search).get("card");
@@ -106,9 +106,9 @@ export function Workspace({ session }: { session: Session }) {
     return map;
   }, [payload?.cards]);
 
-  async function refresh() {
-    if (payload) await loadVersion(payload.version.id, true);
-  }
+  const refresh = useCallback(async () => {
+    if (payload?.version.id) await loadVersion(payload.version.id, true);
+  }, [payload?.version.id, loadVersion]);
 
   async function openActivity() {
     setView("activity");

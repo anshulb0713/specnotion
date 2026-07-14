@@ -2,7 +2,8 @@
 
 import type { ReviewCard, Risk } from "@speccheck/contracts";
 import { MessageSquarePlus, X } from "lucide-react";
-import { type ComponentPropsWithoutRef, type ReactNode, useState } from "react";
+import { createContext, memo, type ComponentPropsWithoutRef, type ReactNode, useContext, useLayoutEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
@@ -38,7 +39,6 @@ function ReviewableBlock({
   readerMode,
   onReview,
   onOpenCard,
-  composer,
   ...props
 }: ExtraProps & ComponentPropsWithoutRef<"div"> & {
   tag: keyof HTMLElementTagNameMap;
@@ -47,7 +47,6 @@ function ReviewableBlock({
   readerMode: boolean;
   onReview: (anchor: AnchorDraft) => void;
   onOpenCard: (id: string) => void;
-  composer?: ReactNode;
 }) {
   const start = node?.position?.start.offset ?? 0;
   const end = node?.position?.end.offset ?? start + 1;
@@ -66,12 +65,131 @@ function ReviewableBlock({
           {cards.length > 0 && <button className="review-count pulse" onClick={() => onOpenCard(cards[0]!.id)}>{cards.length}</button>}
         </div>
       )}
-      {composer}
     </div>
   );
 }
 
-export function MarkdownReview({
+type MarkdownContextValue = {
+  cardsByBlock: Map<number, ReviewCard[]>;
+  readerMode: boolean;
+  onReview: (anchor: AnchorDraft) => void;
+  onOpenCard: (id: string) => void;
+};
+
+const MarkdownContext = createContext<MarkdownContextValue | null>(null);
+const remarkPlugins = [remarkGfm];
+const rehypePlugins = [rehypeSanitize];
+
+function markdownBlock(tag: keyof HTMLElementTagNameMap) {
+  return function MarkdownBlock({ node, children, ...props }: ExtraProps & Record<string, unknown>) {
+    const context = useContext(MarkdownContext);
+    if (!context) return null;
+    const start = node?.position?.start.offset ?? 0;
+    return (
+      <ReviewableBlock
+        tag={tag}
+        node={node}
+        cards={context.cardsByBlock.get(start) ?? []}
+        readerMode={context.readerMode}
+        onReview={context.onReview}
+        onOpenCard={context.onOpenCard}
+        {...props}
+      >
+        {children as ReactNode}
+      </ReviewableBlock>
+    );
+  };
+}
+
+const markdownComponents = {
+  h1: markdownBlock("h1"), h2: markdownBlock("h2"), h3: markdownBlock("h3"), h4: markdownBlock("h4"),
+  p: markdownBlock("p"), blockquote: markdownBlock("blockquote"), pre: markdownBlock("pre"), table: markdownBlock("table"),
+} as Components;
+
+const MarkdownDocument = memo(function MarkdownDocument({
+  markdown,
+  cardsByBlock,
+  readerMode,
+  onReview,
+  onOpenCard,
+}: {
+  markdown: string;
+  cardsByBlock: Map<number, ReviewCard[]>;
+  readerMode: boolean;
+  onReview: (anchor: AnchorDraft) => void;
+  onOpenCard: (id: string) => void;
+}) {
+  const context = useMemo(() => ({ cardsByBlock, readerMode, onReview, onOpenCard }), [cardsByBlock, readerMode, onReview, onOpenCard]);
+  return (
+    <MarkdownContext.Provider value={context}>
+      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} skipHtml components={markdownComponents}>{markdown}</ReactMarkdown>
+    </MarkdownContext.Provider>
+  );
+});
+
+function ReviewComposer({
+  draft,
+  versionId,
+  onCancel,
+  onCreated,
+  onOpenCard,
+}: {
+  draft: AnchorDraft;
+  versionId: string;
+  onCancel: () => void;
+  onCreated: () => Promise<void>;
+  onOpenCard: (id: string) => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [risk, setRisk] = useState<Risk>("discussion");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function createCard() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api<{ cardId: string }>(`/api/versions/${versionId}/cards`, {
+        method: "POST",
+        body: JSON.stringify({ title, body, risk, anchor: draft }),
+      });
+      onCancel();
+      await onCreated();
+      onOpenCard(result.cardId);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not create this review.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="review-composer anchored" role="dialog" aria-label="Create review card">
+      <div className="composer-header"><span><MessageSquarePlus size={15} /><strong>{draft.selectedText ? "Review selected text" : "Review this block"}</strong></span><button aria-label="Cancel review" disabled={busy} onClick={onCancel}><X size={16} /></button></div>
+      {draft.selectedText && <blockquote><small>Selected text</small>“{draft.selectedText}”</blockquote>}
+      <label>Review title<input autoFocus placeholder="What needs discussion?" disabled={busy} value={title} onChange={(event) => setTitle(event.target.value)} /></label>
+      <label>Message<textarea placeholder="Describe the concern, question, or decision…" disabled={busy} value={body} onChange={(event) => setBody(event.target.value)} rows={4} /></label>
+      {error && <p className="error-banner compact">{error}</p>}
+      <div className="composer-footer">
+        <label>Risk<select value={risk} disabled={busy} onChange={(event) => setRisk(event.target.value as Risk)}><option value="discussion">Discussion</option><option value="high_risk">High risk</option><option value="blocker">Blocker</option></select></label>
+        <button className="primary" disabled={busy || title.trim().length < 3 || !body.trim()} onClick={() => void createCard()}>{busy ? "Creating…" : "Create review"}</button>
+      </div>
+    </div>
+  );
+}
+
+function AnchoredReviewComposer(props: ComponentPropsWithoutRef<typeof ReviewComposer>) {
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    setTarget(document.querySelector<HTMLElement>(`.reviewable-block[data-block-start="${props.draft.blockStart}"]`));
+  }, [props.draft.blockStart]);
+
+  return target ? createPortal(<ReviewComposer {...props} />, target) : null;
+}
+
+export const MarkdownReview = memo(function MarkdownReview({
   markdown,
   cardsByBlock,
   readerMode,
@@ -87,55 +205,20 @@ export function MarkdownReview({
   onCreated: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState<AnchorDraft | null>(null);
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [risk, setRisk] = useState<Risk>("discussion");
-  const [busy, setBusy] = useState(false);
-
-  async function createCard() {
-    if (!draft) return;
-    setBusy(true);
-    try {
-      const result = await api<{ cardId: string }>(`/api/versions/${versionId}/cards`, {
-        method: "POST",
-        body: JSON.stringify({ title, body, risk, anchor: draft }),
-      });
-      setDraft(null); setTitle(""); setBody(""); setRisk("discussion");
-      await onCreated();
-      onOpenCard(result.cardId);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function composerFor(blockStart: number) {
-    if (!draft || readerMode || draft.blockStart !== blockStart) return null;
-    return (
-      <div className="review-composer anchored" role="dialog" aria-label="Create review card">
-        <div className="composer-header"><span><MessageSquarePlus size={15} /><strong>{draft.selectedText ? "Review selected text" : "Review this block"}</strong></span><button aria-label="Cancel review" onClick={() => setDraft(null)}><X size={16} /></button></div>
-        {draft.selectedText && <blockquote><small>Selected text</small>“{draft.selectedText}”</blockquote>}
-        <label>Review title<input autoFocus placeholder="What needs discussion?" value={title} onChange={(event) => setTitle(event.target.value)} /></label>
-        <label>Message<textarea placeholder="Describe the concern, question, or decision…" value={body} onChange={(event) => setBody(event.target.value)} rows={4} /></label>
-        <div className="composer-footer">
-          <label>Risk<select value={risk} onChange={(event) => setRisk(event.target.value as Risk)}><option value="discussion">Discussion</option><option value="high_risk">High risk</option><option value="blocker">Blocker</option></select></label>
-          <button className="primary" disabled={busy || title.trim().length < 3 || !body.trim()} onClick={() => void createCard()}>{busy ? "Creating…" : "Create review"}</button>
-        </div>
-      </div>
-    );
-  }
-
-  const wrap = (tag: keyof HTMLElementTagNameMap) => ({ node, children, ...props }: ExtraProps & Record<string, unknown>) => {
-    const start = node?.position?.start.offset ?? 0;
-    return <ReviewableBlock tag={tag} node={node} cards={cardsByBlock.get(start) ?? []} readerMode={readerMode} onReview={setDraft} onOpenCard={onOpenCard} composer={composerFor(start)} {...props}>{children as ReactNode}</ReviewableBlock>;
-  };
-  const components = {
-    h1: wrap("h1"), h2: wrap("h2"), h3: wrap("h3"), h4: wrap("h4"),
-    p: wrap("p"), blockquote: wrap("blockquote"), pre: wrap("pre"), table: wrap("table"),
-  } as Components;
 
   return (
     <article className="document-canvas">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} skipHtml components={components}>{markdown}</ReactMarkdown>
+      <MarkdownDocument markdown={markdown} cardsByBlock={cardsByBlock} readerMode={readerMode} onReview={setDraft} onOpenCard={onOpenCard} />
+      {draft && !readerMode && (
+        <AnchoredReviewComposer
+          key={`${draft.blockStart}:${draft.selectionStart ?? "block"}:${draft.selectionEnd ?? "block"}`}
+          draft={draft}
+          versionId={versionId}
+          onCancel={() => setDraft(null)}
+          onCreated={onCreated}
+          onOpenCard={onOpenCard}
+        />
+      )}
     </article>
   );
-}
+});
