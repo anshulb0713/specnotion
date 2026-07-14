@@ -1,7 +1,8 @@
 "use client";
 
 import type { ReviewCard, Risk } from "@speccheck/contracts";
-import { type ComponentPropsWithoutRef, type ReactNode, useMemo, useState } from "react";
+import { MessageSquarePlus, X } from "lucide-react";
+import { type ComponentPropsWithoutRef, type ReactNode, useState } from "react";
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
@@ -37,6 +38,7 @@ function ReviewableBlock({
   readerMode,
   onReview,
   onOpenCard,
+  composer,
   ...props
 }: ExtraProps & ComponentPropsWithoutRef<"div"> & {
   tag: keyof HTMLElementTagNameMap;
@@ -45,6 +47,7 @@ function ReviewableBlock({
   readerMode: boolean;
   onReview: (anchor: AnchorDraft) => void;
   onOpenCard: (id: string) => void;
+  composer?: ReactNode;
 }) {
   const start = node?.position?.start.offset ?? 0;
   const end = node?.position?.end.offset ?? start + 1;
@@ -59,10 +62,11 @@ function ReviewableBlock({
       }}>{children}</Tag>
       {!readerMode && (
         <div className="block-actions">
-          <button className="add-review" title="Add review card" onClick={() => onReview({ blockStart: start, blockEnd: end, selectedText: null, selectionStart: null, selectionEnd: null })}>+</button>
+          <button className="add-review" title="Add review card" onClick={() => onReview({ blockStart: start, blockEnd: end, selectedText: null, selectionStart: null, selectionEnd: null })}><MessageSquarePlus size={14} /></button>
           {cards.length > 0 && <button className="review-count pulse" onClick={() => onOpenCard(cards[0]!.id)}>{cards.length}</button>}
         </div>
       )}
+      {composer}
     </div>
   );
 }
@@ -88,17 +92,6 @@ export function MarkdownReview({
   const [risk, setRisk] = useState<Risk>("discussion");
   const [busy, setBusy] = useState(false);
 
-  const components = useMemo<Components>(() => {
-    const wrap = (tag: keyof HTMLElementTagNameMap) => ({ node, children, ...props }: ExtraProps & Record<string, unknown>) => {
-      const start = node?.position?.start.offset ?? 0;
-      return <ReviewableBlock tag={tag} node={node} cards={cardsByBlock.get(start) ?? []} readerMode={readerMode} onReview={setDraft} onOpenCard={onOpenCard} {...props}>{children as ReactNode}</ReviewableBlock>;
-    };
-    return {
-      h1: wrap("h1"), h2: wrap("h2"), h3: wrap("h3"), h4: wrap("h4"),
-      p: wrap("p"), blockquote: wrap("blockquote"), pre: wrap("pre"), table: wrap("table"),
-    } as Components;
-  }, [cardsByBlock, readerMode, onOpenCard]);
-
   async function createCard() {
     if (!draft) return;
     setBusy(true);
@@ -115,21 +108,34 @@ export function MarkdownReview({
     }
   }
 
+  function composerFor(blockStart: number) {
+    if (!draft || readerMode || draft.blockStart !== blockStart) return null;
+    return (
+      <div className="review-composer anchored" role="dialog" aria-label="Create review card">
+        <div className="composer-header"><span><MessageSquarePlus size={15} /><strong>{draft.selectedText ? "Review selected text" : "Review this block"}</strong></span><button aria-label="Cancel review" onClick={() => setDraft(null)}><X size={16} /></button></div>
+        {draft.selectedText && <blockquote><small>Selected text</small>“{draft.selectedText}”</blockquote>}
+        <label>Review title<input autoFocus placeholder="What needs discussion?" value={title} onChange={(event) => setTitle(event.target.value)} /></label>
+        <label>Message<textarea placeholder="Describe the concern, question, or decision…" value={body} onChange={(event) => setBody(event.target.value)} rows={4} /></label>
+        <div className="composer-footer">
+          <label>Risk<select value={risk} onChange={(event) => setRisk(event.target.value as Risk)}><option value="discussion">Discussion</option><option value="high_risk">High risk</option><option value="blocker">Blocker</option></select></label>
+          <button className="primary" disabled={busy || title.trim().length < 3 || !body.trim()} onClick={() => void createCard()}>{busy ? "Creating…" : "Create review"}</button>
+        </div>
+      </div>
+    );
+  }
+
+  const wrap = (tag: keyof HTMLElementTagNameMap) => ({ node, children, ...props }: ExtraProps & Record<string, unknown>) => {
+    const start = node?.position?.start.offset ?? 0;
+    return <ReviewableBlock tag={tag} node={node} cards={cardsByBlock.get(start) ?? []} readerMode={readerMode} onReview={setDraft} onOpenCard={onOpenCard} composer={composerFor(start)} {...props}>{children as ReactNode}</ReviewableBlock>;
+  };
+  const components = {
+    h1: wrap("h1"), h2: wrap("h2"), h3: wrap("h3"), h4: wrap("h4"),
+    p: wrap("p"), blockquote: wrap("blockquote"), pre: wrap("pre"), table: wrap("table"),
+  } as Components;
+
   return (
     <article className="document-canvas">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} skipHtml components={components}>{markdown}</ReactMarkdown>
-      {draft && !readerMode && (
-        <div className="review-composer" role="dialog" aria-label="Create review card">
-          <div className="composer-header"><strong>New review card</strong><button onClick={() => setDraft(null)}>×</button></div>
-          {draft.selectedText && <blockquote>“{draft.selectedText}”</blockquote>}
-          <input placeholder="Concern title" value={title} onChange={(event) => setTitle(event.target.value)} />
-          <textarea placeholder="Start the conversation…" value={body} onChange={(event) => setBody(event.target.value)} rows={5} />
-          <div className="composer-footer">
-            <select value={risk} onChange={(event) => setRisk(event.target.value as Risk)}><option value="discussion">Discussion</option><option value="high_risk">High risk</option><option value="blocker">Blocker</option></select>
-            <button className="primary" disabled={busy || title.trim().length < 3 || !body.trim()} onClick={() => void createCard()}>{busy ? "Creating…" : "Create card"}</button>
-          </div>
-        </div>
-      )}
     </article>
   );
 }

@@ -2,18 +2,21 @@
 
 import type { Session } from "@supabase/supabase-js";
 import type { ActivityItem, Project, ReviewCard, SpecificationVersion } from "@speccheck/contracts";
+import { BookOpen, ChevronDown, FileText, LayoutGrid, MessagesSquare, Settings, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, ApiError } from "../lib/api";
-import { supabase } from "../lib/supabase";
+import { api } from "../lib/api";
+import { AppChrome } from "./AppChrome";
 import { MarkdownReview } from "./MarkdownReview";
 import { ReviewPanel } from "./ReviewPanel";
+import { getWorkspacePhase } from "./workspaceState";
 
 type ProjectWithVersion = Project & { activeVersionId: string | null };
 type VersionPayload = { project: Project; version: SpecificationVersion; cards: ReviewCard[] };
 
 export function Workspace({ session }: { session: Session }) {
   const [projects, setProjects] = useState<ProjectWithVersion[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [payload, setPayload] = useState<VersionPayload | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
@@ -36,6 +39,7 @@ export function Workspace({ session }: { session: Session }) {
         ? requestedProject
         : result.projects[0]?.id ?? null;
     });
+    setProjectsLoaded(true);
     return result.projects;
   }, []);
 
@@ -44,7 +48,11 @@ export function Workspace({ session }: { session: Session }) {
     try {
       const next = await api<VersionPayload>(`/api/versions/${versionId}`);
       setPayload(next);
-      setActiveCardId((current) => current && next.cards.some((card) => card.id === current) ? current : null);
+      setActiveCardId((current) => {
+        if (current && next.cards.some((card) => card.id === current)) return current;
+        const requestedCard = new URLSearchParams(window.location.search).get("card");
+        return next.cards.some((card) => card.id === requestedCard) ? requestedCard : null;
+      });
       setError(null);
     } catch (error) {
       if (!quiet) setError(error instanceof Error ? error.message : "Could not load the specification.");
@@ -61,6 +69,7 @@ export function Workspace({ session }: { session: Session }) {
   }, [loadProjects]);
 
   useEffect(() => {
+    if (!projectsLoaded) return;
     if (!selectedProject) {
       setPayload(null);
       setLoading(false);
@@ -72,7 +81,7 @@ export function Workspace({ session }: { session: Session }) {
       return;
     }
     void loadVersion(selectedProject.activeVersionId);
-  }, [selectedProject?.id, selectedProject?.activeVersionId, loadVersion]);
+  }, [projectsLoaded, selectedProject?.id, selectedProject?.activeVersionId, loadVersion]);
 
   useEffect(() => {
     if (!payload?.version.id || view !== "document") return;
@@ -113,51 +122,61 @@ export function Workspace({ session }: { session: Session }) {
     return groups;
   }, [activity]);
 
-  return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand"><span className="brand-mark small">S</span><strong>SpecCheck</strong></div>
-        <label className="project-picker">Project
-          <select value={selectedProjectId ?? ""} onChange={(event) => { setSelectedProjectId(event.target.value); setView("document"); }}>
-            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-          </select>
-        </label>
-        <nav>
-          <button className={view === "document" ? "nav-active" : ""} onClick={() => setView("document")}>Specification</button>
-          <button className={view === "activity" ? "nav-active" : ""} onClick={() => void openActivity()}>My Activity</button>
-          {selectedProject?.role === "project_owner" && <Link href={`/manage?project=${encodeURIComponent(selectedProject.id)}`}>Project setup</Link>}
-        </nav>
-        <div className="sidebar-footer">
-          <span>{session.user.email}</span>
-          <button onClick={() => void supabase.auth.signOut()}>Sign out</button>
-        </div>
-      </aside>
+  const workspacePhase = getWorkspacePhase({
+    projectsLoaded,
+    loading,
+    hasError: Boolean(error),
+    hasPayload: Boolean(payload),
+  });
 
+  const chromeNav = <>
+    <button type="button" className={view === "document" ? "active" : ""} onClick={() => setView("document")}><LayoutGrid size={15} /> Overview</button>
+    <button type="button" className={view === "activity" ? "active" : ""} onClick={() => void openActivity()}><MessagesSquare size={15} /> My activity</button>
+    {selectedProject?.role === "project_owner" && <Link href={`/manage?project=${encodeURIComponent(selectedProject.id)}`}><Settings size={15} /> Project setup</Link>}
+  </>;
+
+  const chromeActions = <>
+    <label className="nav-project-picker"><span>Project</span><select aria-label="Project" value={selectedProjectId ?? ""} onChange={(event) => { setSelectedProjectId(event.target.value); setView("document"); }}>
+      {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+    </select><ChevronDown size={13} /></label>
+    {view === "document" && <button className={`reader-button ${readerMode ? "active" : ""}`} onClick={() => setReaderMode((value) => !value)}><BookOpen size={15} />{readerMode ? "Exit reader" : "Reader mode"}</button>}
+  </>;
+
+  return (
+    <AppChrome session={session} nav={chromeNav} actions={chromeActions}>
       <section className="workspace">
-        <header className="topbar">
-          <div><p className="eyebrow">{selectedProject?.name ?? "NO PROJECT"}</p><h2>{payload?.version.title ?? "Architecture specification"}</h2></div>
-          <div className="topbar-actions">
-            {view === "document" && <button className={readerMode ? "reader-on" : ""} onClick={() => setReaderMode((value) => !value)}>{readerMode ? "Exit Reader" : "Reader mode"}</button>}
-          </div>
-        </header>
 
         {error && <div className="error-banner workspace-error">{error}<button onClick={() => setError(null)}>×</button></div>}
-        {loading ? <div className="centered"><div className="spinner" />Loading specification…</div> : null}
+        {view === "document" && workspacePhase === "loading" ? <div className="centered"><div className="spinner" />Loading project…</div> : null}
 
-        {!loading && view === "document" && !payload ? (
+        {view === "document" && workspacePhase === "empty" ? (
           <div className="empty-state"><h3>No specification uploaded</h3><p>Upload a Markdown architecture proposal to begin review.</p></div>
         ) : null}
 
-        {!loading && view === "document" && payload ? (
+        {view === "document" && workspacePhase === "ready" && payload ? (
           <div className={`document-layout ${readerMode ? "reader-layout" : ""}`}>
-            <MarkdownReview
-              markdown={payload.version.markdown}
-              cardsByBlock={cardsByBlock}
-              readerMode={readerMode}
-              onOpenCard={setActiveCardId}
-              onCreated={refresh}
-              versionId={payload.version.id}
-            />
+            {!readerMode && <aside className="document-sidebar">
+              <div className="rail-section">
+                <p className="rail-label">Projects</p>
+              <div className="project-list">{projects.map((project) => <button type="button" key={project.id} className={project.id === selectedProjectId ? "active" : ""} onClick={() => { setSelectedProjectId(project.id); setView("document"); }}><span className="project-icon">{project.name.slice(0, 1).toUpperCase()}</span><span><strong>{project.name}</strong><small>{project.role === "project_owner" ? "Owner" : "Member"}</small></span></button>)}</div>
+              </div>
+              <div className="rail-section rail-document">
+                <p className="rail-label">Active specification</p>
+                <div className="active-document"><FileText size={16} /><span><strong>{payload.version.title}</strong><small>{payload.version.filename}</small></span></div>
+              </div>
+              <div className="rail-tip"><UserRound size={16} /><p><strong>Review together</strong><span>Select text or use the review control beside a block to start a conversation.</span></p></div>
+            </aside>}
+            <div className="spec-column">
+              <header className="spec-header"><div><div className="spec-breadcrumb"><span>Architecture specs</span><b>/</b><span>{selectedProject?.name}</span><b>/</b><span>Review workspace</span></div><h1>{payload.version.title}</h1><p>Collaborative architecture review</p></div><span className="version-pill">Active version</span></header>
+              <MarkdownReview
+                markdown={payload.version.markdown}
+                cardsByBlock={cardsByBlock}
+                readerMode={readerMode}
+                onOpenCard={setActiveCardId}
+                onCreated={refresh}
+                versionId={payload.version.id}
+              />
+            </div>
             {!readerMode && (
               <ReviewPanel
                 card={activeCard}
@@ -189,6 +208,6 @@ export function Workspace({ session }: { session: Session }) {
           </div>
         ) : null}
       </section>
-    </main>
+    </AppChrome>
   );
 }

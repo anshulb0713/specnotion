@@ -1,6 +1,7 @@
 "use client";
 
 import type { Session } from "@supabase/supabase-js";
+import { CheckSquare, ShieldCheck } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 
@@ -35,8 +36,8 @@ export default function InvitePage() {
       setBusy(false);
       return;
     }
-    await supabase.auth.signOut();
-    window.location.assign("/?invited=1");
+    const projectId = new URLSearchParams(window.location.search).get("project");
+    window.location.replace(projectId ? `/?project=${encodeURIComponent(projectId)}&invited=1` : "/?invited=1");
   }
 
   if (session === undefined) {
@@ -47,7 +48,7 @@ export default function InvitePage() {
     return (
       <main className="login-shell">
         <section className="login-card">
-          <div className="brand-mark">S</div>
+          <div className="auth-logo"><CheckSquare size={20} /></div>
           <p className="eyebrow">INVITATION LINK</p>
           <h1>This invitation link is invalid or expired.</h1>
           <p className="muted">Ask the project owner to send a new invitation, or sign in if you already created your password.</p>
@@ -60,15 +61,15 @@ export default function InvitePage() {
   return (
     <main className="login-shell">
       <section className="login-card">
-        <div className="brand-mark">S</div>
+        <div className="auth-logo"><CheckSquare size={20} /></div>
         <p className="eyebrow">YOU’VE BEEN INVITED</p>
         <h1>Create your SpecCheck password.</h1>
-        <p className="muted">Your account email is <strong>{session.user.email}</strong>. After creating a password, sign in to open the project.</p>
+        <p className="muted">Your account email is <strong>{session.user.email}</strong>. After creating a password, you’ll open the invited project automatically.</p>
         <form className="stack" onSubmit={setInvitedPassword}>
           <label>New password<input type="password" autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
           <label>Confirm password<input type="password" autoComplete="new-password" minLength={8} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required /></label>
           {error && <p className="error-banner">{error}</p>}
-          <button className="primary" disabled={busy}>{busy ? "Creating password…" : "Create password"}</button>
+          <button className="primary auth-submit" disabled={busy}>{busy ? "Creating password…" : <><ShieldCheck size={16} /> Create password &amp; open project</>}</button>
         </form>
       </section>
     </main>

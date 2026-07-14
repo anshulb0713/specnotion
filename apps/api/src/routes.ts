@@ -7,7 +7,7 @@ import {
   inviteMemberSchema,
   transitionCardSchema,
 } from "@speccheck/contracts";
-import type { MembershipRow, ProjectRow, VersionRow } from "@speccheck/database";
+import type { CardRow, MembershipRow, ProjectRow, VersionRow } from "@speccheck/database";
 import { config } from "./config.js";
 import { ApiProblem, getVersionContext, loadCards, requireMembership, sha256 } from "./domain.js";
 import { supabaseAdmin, throwIfSupabaseError } from "./supabase.js";
@@ -52,15 +52,48 @@ apiRouter.get("/projects", async (request, response) => {
     .in("id", memberships.map((membership) => membership.project_id))
     .order("name");
   throwIfSupabaseError(projectError);
+  const projects = (projectData ?? []) as ProjectRow[];
+  const projectIds = projects.map((project) => project.id);
+  const activeVersionIds = projects.flatMap((project) => project.active_version_id ? [project.active_version_id] : []);
+  const [{ data: versionData, error: versionError }, { data: allMembershipData, error: allMembershipError }, { data: cardData, error: cardError }] = await Promise.all([
+    activeVersionIds.length
+      ? supabaseAdmin.from("specification_versions").select("id,title,filename,created_at").in("id", activeVersionIds)
+      : Promise.resolve({ data: [], error: null }),
+    supabaseAdmin.from("memberships").select("project_id").in("project_id", projectIds),
+    activeVersionIds.length
+      ? supabaseAdmin.from("review_cards").select("version_id,state,risk").in("version_id", activeVersionIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  throwIfSupabaseError(versionError);
+  throwIfSupabaseError(allMembershipError);
+  throwIfSupabaseError(cardError);
+  const versionById = new Map((versionData ?? []).map((version) => [version.id, version]));
+  const memberCountByProject = new Map<string, number>();
+  for (const membership of allMembershipData ?? []) memberCountByProject.set(membership.project_id, (memberCountByProject.get(membership.project_id) ?? 0) + 1);
+  const cardsByVersion = new Map<string, Array<Pick<CardRow, "state" | "risk">>>();
+  for (const card of cardData ?? []) cardsByVersion.set(card.version_id, [...(cardsByVersion.get(card.version_id) ?? []), card as Pick<CardRow, "state" | "risk">]);
   const roleByProject = new Map(memberships.map((membership) => [membership.project_id, membership.role]));
   response.json({
-    projects: ((projectData ?? []) as ProjectRow[]).map((project) => ({
-      id: project.id,
-      name: project.name,
-      slug: project.slug,
-      role: roleByProject.get(project.id),
-      activeVersionId: project.active_version_id,
-    })),
+    projects: projects.map((project) => {
+      const version = project.active_version_id ? versionById.get(project.active_version_id) : null;
+      const cards = project.active_version_id ? cardsByVersion.get(project.active_version_id) ?? [] : [];
+      return {
+        id: project.id,
+        name: project.name,
+        slug: project.slug,
+        role: roleByProject.get(project.id),
+        activeVersionId: project.active_version_id,
+        activeVersionTitle: version?.title ?? null,
+        activeVersionFilename: version?.filename ?? null,
+        updatedAt: version?.created_at ?? project.created_at,
+        memberCount: memberCountByProject.get(project.id) ?? 0,
+        counts: {
+          open: cards.filter((card) => card.state === "open").length,
+          highRisk: cards.filter((card) => card.state === "open" && (card.risk === "high_risk" || card.risk === "blocker")).length,
+          closed: cards.filter((card) => card.state === "closed").length,
+        },
+      };
+    }),
   });
 });
 
@@ -136,6 +169,78 @@ apiRouter.post("/projects/:projectId/invitations", async (request, response) => 
   }
   throwIfSupabaseError(error);
   response.status(201).json({ invitationId: data, email: input.email, role: "project_member", existingUser });
+});
+
+apiRouter.get("/projects/:projectId/members", async (request, response) => {
+  const projectId = pathParam(request.params.projectId, "Project");
+  await requireMembership(projectId, request.user.id, ["project_owner"]);
+  const { data, error } = await supabaseAdmin
+    .from("memberships")
+    .select("user_id,role,created_at,profiles!inner(email,display_name)")
+    .eq("project_id", projectId)
+    .order("created_at");
+  throwIfSupabaseError(error);
+  response.json({
+    members: (data ?? []).map((row) => {
+      const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+      return {
+        id: row.user_id,
+        email: profile?.email ?? "",
+        displayName: profile?.display_name ?? profile?.email?.split("@")[0] ?? "Project member",
+        role: row.role,
+        joinedAt: row.created_at,
+      };
+    }),
+  });
+});
+
+apiRouter.get("/projects/:projectId/overview", async (request, response) => {
+  const projectId = pathParam(request.params.projectId, "Project");
+  const membership = await requireMembership(projectId, request.user.id);
+  const { data: projectData, error: projectError } = await supabaseAdmin
+    .from("projects")
+    .select("id,active_version_id")
+    .eq("id", projectId)
+    .single();
+  throwIfSupabaseError(projectError);
+  if (!projectData) throw new ApiProblem(404, "NOT_FOUND", "Project not found.");
+
+  const { data: memberData, error: memberError } = await supabaseAdmin
+    .from("memberships")
+    .select("user_id,role,profiles!inner(display_name)")
+    .eq("project_id", projectId)
+    .order("created_at");
+  throwIfSupabaseError(memberError);
+
+  const cards = projectData.active_version_id ? await loadCards(projectData.active_version_id) : [];
+  response.json({
+    role: membership.role,
+    members: (memberData ?? []).map((row) => {
+      const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+      return {
+        id: row.user_id,
+        displayName: profile?.display_name ?? "Project member",
+        role: row.role,
+      };
+    }),
+    issues: cards.map((card) => {
+      const messages = Array.isArray(card.messages) ? card.messages as Array<Record<string, unknown>> : [];
+      const latestMessage = messages.at(-1);
+      return {
+        id: card.id,
+        title: card.title,
+        risk: card.risk,
+        state: card.state,
+        createdAt: card.createdAt,
+        messageCount: messages.length,
+        latestComment: latestMessage ? {
+          authorName: latestMessage.authorName,
+          body: latestMessage.body,
+          createdAt: latestMessage.createdAt,
+        } : null,
+      };
+    }),
+  });
 });
 
 apiRouter.post("/projects/:projectId/versions", upload.single("file"), async (request, response) => {

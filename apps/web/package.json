@@ -14,6 +14,7 @@
     "@speccheck/contracts": "workspace:*",
     "@supabase/supabase-js": "2.110.3",
     "dotenv": "17.2.3",
+    "lucide-react": "0.454.0",
     "next": "16.2.10",
     "react": "19.2.0",
     "react-dom": "19.2.0",
