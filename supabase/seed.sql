@@ -1,0 +1,14 @@
+-- Create demo users through Supabase Auth first. Then replace the UUIDs and
+-- emails below with the users shown in Authentication > Users.
+--
+-- insert into public.profiles (id, email, display_name) values
+--   ('USER_UUID_1', 'owner@example.com', 'Avery Owner'),
+--   ('USER_UUID_2', 'member@example.com', 'Riley Member');
+--
+-- insert into public.projects (name, slug)
+-- values ('Payments Platform', 'payments-platform');
+--
+-- insert into public.memberships (project_id, user_id, role)
+-- select p.id, 'USER_UUID_1', 'project_owner' from public.projects p where p.slug = 'payments-platform';
+-- insert into public.memberships (project_id, user_id, role)
+-- select p.id, 'USER_UUID_2', 'project_member' from public.projects p where p.slug = 'payments-platform';

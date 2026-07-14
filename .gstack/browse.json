@@ -1,0 +1,9 @@
+{
+  "pid": 75030,
+  "port": 34567,
+  "token": "831b824c-d732-4bc0-92bc-128c19dffca8",
+  "startedAt": "2026-07-14T05:34:39.729Z",
+  "serverPath": "/Users/anshulborde/.claude/skills/gstack/browse/src/server.ts",
+  "mode": "headed",
+  "configHash": "303a7eeccc03078b"
+}
