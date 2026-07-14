@@ -2,7 +2,7 @@
 
 import type { Session } from "@supabase/supabase-js";
 import type { Project } from "@speccheck/contracts";
-import { AlertTriangle, ArrowRight, Check, CheckCircle2, FileText, FolderKanban, MailPlus, MessageCircle, Search, Settings, UserPlus, Users, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, CheckCircle2, FileText, FolderKanban, MailPlus, MessageCircle, Plus, Search, Settings, UserPlus, Users, X } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { AppChrome } from "./AppChrome";
@@ -54,11 +54,17 @@ export function ProjectDirectory({ session }: { session: Session }) {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [canCreateProjects, setCanCreateProjects] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
-    void api<{ projects: ProjectOverview[] }>("/api/projects")
+    void api<{ projects: ProjectOverview[]; canCreateProjects: boolean }>("/api/projects")
       .then((result) => {
         setProjects(result.projects);
+        setCanCreateProjects(result.canCreateProjects);
         setSelectedProjectId(result.projects[0]?.id ?? "");
       })
       .catch((error) => setError(error instanceof Error ? error.message : "Could not load projects."))
@@ -114,6 +120,22 @@ export function ProjectDirectory({ session }: { session: Session }) {
     setInviteError(null);
   }
 
+  async function createProject(event: FormEvent) {
+    event.preventDefault();
+    setCreateBusy(true);
+    setCreateError(null);
+    try {
+      const result = await api<{ projectId: string }>("/api/projects", {
+        method: "POST",
+        body: JSON.stringify({ name: projectName }),
+      });
+      window.location.href = `/manage?project=${encodeURIComponent(result.projectId)}`;
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : "Could not create this project.");
+      setCreateBusy(false);
+    }
+  }
+
   async function sendInvitations(event: FormEvent) {
     event.preventDefault();
     if (!inviteProject) return;
@@ -159,7 +181,7 @@ export function ProjectDirectory({ session }: { session: Session }) {
       <section className="project-directory-shell">
       <div className="project-directory">
         <header className="directory-header">
-          <div><p className="eyebrow">YOUR WORKSPACES</p><h1>Projects</h1><p>Choose an architecture project to read its active specification or continue a review.</p></div>
+          <div><p className="eyebrow">YOUR WORKSPACES</p><h1>Projects</h1><p>Choose an architecture project to read its active specification or continue a review.</p>{canCreateProjects && <button className="primary icon-label" type="button" style={{ marginTop: 14 }} onClick={() => setCreateOpen(true)}><Plus size={14} /> Create project</button>}</div>
           <label className="directory-search"><Search size={15} /><span className="sr-only">Search projects</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects…" /></label>
         </header>
 
@@ -189,7 +211,7 @@ export function ProjectDirectory({ session }: { session: Session }) {
             </div>
           </article>;
         })}</div>}
-        {!loading && visible.length === 0 && <div className="empty-state"><FolderKanban size={28} /><h3>{projects.length ? "No matching projects" : "No projects yet"}</h3><p>{projects.length ? "Try a different project or specification name." : "Ask a project owner to invite you to a SpecCheck project."}</p></div>}
+        {!loading && visible.length === 0 && <div className="empty-state"><FolderKanban size={28} /><h3>{projects.length ? "No matching projects" : "No projects yet"}</h3><p>{projects.length ? "Try a different project or specification name." : canCreateProjects ? "Create your first architecture review project, then upload its Markdown specification." : "Ask a project owner to invite you to a SpecCheck project."}</p>{!projects.length && canCreateProjects && <button className="primary icon-label" type="button" onClick={() => setCreateOpen(true)}><Plus size={14} /> Create first project</button>}</div>}
       </div>
 
       <aside className="directory-right-rail" aria-label="Selected project details">
@@ -203,9 +225,32 @@ export function ProjectDirectory({ session }: { session: Session }) {
         </> : <div className="directory-rail-empty">Select a project to inspect its reviews and members.</div>}
       </aside>
       {inviteProject && <InviteMembersModal project={inviteProject} emails={inviteEmails} setEmails={(value) => { setInviteEmails(value); setInviteError(null); }} results={inviteResults} error={inviteError} busy={inviteBusy} onClose={closeInviteModal} onSubmit={sendInvitations} />}
+      {createOpen && <CreateProjectModal name={projectName} busy={createBusy} error={createError} onNameChange={(value) => { setProjectName(value); setCreateError(null); }} onClose={() => { if (!createBusy) { setCreateOpen(false); setProjectName(""); setCreateError(null); } }} onSubmit={createProject} />}
       </section>
     </AppChrome>
   );
+}
+
+function CreateProjectModal({ name, busy, error, onNameChange, onClose, onSubmit }: {
+  name: string;
+  busy: boolean;
+  error: string | null;
+  onNameChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: (event: FormEvent) => Promise<void>;
+}) {
+  return <div className="invite-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="invite-modal" role="dialog" aria-modal="true" aria-labelledby="create-project-title">
+      <header><span><FolderKanban size={18} /></span><div><p>NEW ARCHITECTURE REVIEW</p><h2 id="create-project-title">Create project</h2></div><button type="button" aria-label="Close create project modal" disabled={busy} onClick={onClose}><X size={17} /></button></header>
+      <form onSubmit={(event) => void onSubmit(event)}>
+        <label htmlFor="create-project-name">Project name</label>
+        <input id="create-project-name" autoFocus minLength={2} maxLength={120} required disabled={busy} value={name} onChange={(event) => onNameChange(event.target.value)} placeholder="Payments platform architecture" />
+        <p className="invite-modal-hint">You will become the project owner and can upload its Markdown document on the next screen.</p>
+        {error && <p className="error-banner">{error}</p>}
+        <footer><button type="button" disabled={busy} onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={busy || name.trim().length < 2}>{busy ? "Creating…" : <><Plus size={14} /> Create project</>}</button></footer>
+      </form>
+    </section>
+  </div>;
 }
 
 function ProjectIssues({ project, overview }: { project: ProjectOverview; overview: ProjectSidebar | null }) {

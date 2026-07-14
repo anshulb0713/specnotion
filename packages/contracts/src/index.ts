@@ -17,6 +17,11 @@ export const projectSchema = z.object({
 });
 export type Project = z.infer<typeof projectSchema>;
 
+export const createProjectSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+});
+export type CreateProjectInput = z.infer<typeof createProjectSchema>;
+
 export const specificationVersionSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),

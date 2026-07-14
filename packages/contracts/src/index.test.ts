@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCardSchema, inviteMemberSchema } from "./index";
+import { createCardSchema, createProjectSchema, inviteMemberSchema } from "./index";
 
 describe("createCardSchema", () => {
   it("accepts a whole-block review", () => {
@@ -36,5 +36,18 @@ describe("inviteMemberSchema", () => {
     expect(inviteMemberSchema.parse({ email: "member@example.com", role: "project_owner" })).toEqual({
       email: "member@example.com",
     });
+  });
+});
+
+describe("createProjectSchema", () => {
+  it("trims a valid project name", () => {
+    expect(createProjectSchema.parse({ name: "  Payments Platform  " })).toEqual({
+      name: "Payments Platform",
+    });
+  });
+
+  it("rejects empty and oversized project names", () => {
+    expect(() => createProjectSchema.parse({ name: " " })).toThrow();
+    expect(() => createProjectSchema.parse({ name: "x".repeat(121) })).toThrow();
   });
 });

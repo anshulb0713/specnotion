@@ -4,6 +4,7 @@ import multer from "multer";
 import {
   createCardSchema,
   createMessageSchema,
+  createProjectSchema,
   inviteMemberSchema,
   transitionCardSchema,
 } from "@speccheck/contracts";
@@ -41,8 +42,10 @@ apiRouter.get("/projects", async (request, response) => {
     .eq("user_id", request.user.id);
   throwIfSupabaseError(membershipError);
   const memberships = (membershipData ?? []) as MembershipRow[];
+  const canCreateProjects = request.user.app_metadata?.project_creator === true
+    || memberships.some((membership) => membership.role === "project_owner");
   if (memberships.length === 0) {
-    response.json({ projects: [] });
+    response.json({ projects: [], canCreateProjects });
     return;
   }
 
@@ -74,6 +77,7 @@ apiRouter.get("/projects", async (request, response) => {
   for (const card of cardData ?? []) cardsByVersion.set(card.version_id, [...(cardsByVersion.get(card.version_id) ?? []), card as Pick<CardRow, "state" | "risk">]);
   const roleByProject = new Map(memberships.map((membership) => [membership.project_id, membership.role]));
   response.json({
+    canCreateProjects,
     projects: projects.map((project) => {
       const version = project.active_version_id ? versionById.get(project.active_version_id) : null;
       const cards = project.active_version_id ? cardsByVersion.get(project.active_version_id) ?? [] : [];
@@ -95,6 +99,30 @@ apiRouter.get("/projects", async (request, response) => {
       };
     }),
   });
+});
+
+apiRouter.post("/projects", async (request, response) => {
+  const input = createProjectSchema.parse(request.body);
+  const { data: ownerMemberships, error: membershipError } = await supabaseAdmin
+    .from("memberships")
+    .select("project_id")
+    .eq("user_id", request.user.id)
+    .eq("role", "project_owner")
+    .limit(1);
+  throwIfSupabaseError(membershipError);
+
+  const canCreateProjects = request.user.app_metadata?.project_creator === true
+    || (ownerMemberships?.length ?? 0) > 0;
+  if (!canCreateProjects) {
+    throw new ApiProblem(403, "PROJECT_CREATION_FORBIDDEN", "Only project owners can create projects.");
+  }
+
+  const { data: projectId, error: createError } = await supabaseAdmin.rpc("create_project_with_owner", {
+    p_actor_id: request.user.id,
+    p_name: input.name,
+  });
+  throwIfSupabaseError(createError);
+  response.status(201).json({ projectId });
 });
 
 apiRouter.post("/projects/:projectId/invitations", async (request, response) => {
